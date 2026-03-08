@@ -17,7 +17,8 @@ host-agent-run \
   --out-dir <absolute-path> \
   [--model <name>] \
   [--timeout-seconds <n>] \
-  [--job-id <id>]
+  [--job-id <id>] \
+  [--cancel-file <absolute-path>]
 ```
 
 Alternative form:
@@ -51,6 +52,8 @@ CLI flags win over request-file values when both are provided.
 ## Current runtime support
 
 - `opencode`
+- `ollama`
+- `goose`
 
 Unknown runtimes are rejected.
 
@@ -62,6 +65,7 @@ The wrapper writes:
 - `stdout.log`
 - `stderr.log`
 - `final.md`
+- `cancelled.json` when cancellation is acknowledged
 
 ## `status.json`
 
@@ -71,6 +75,7 @@ at the end with one of:
 - `completed`
 - `failed`
 - `timed_out`
+- `cancelled`
 
 Example:
 
@@ -89,11 +94,28 @@ Example:
   "stdoutPath": "/Users/example/.openclaw/host-jobs/job-123/stdout.log",
   "stderrPath": "/Users/example/.openclaw/host-jobs/job-123/stderr.log",
   "finalPath": "/Users/example/.openclaw/host-jobs/job-123/final.md",
+  "cancelPath": "/Users/example/.openclaw/host-jobs/job-123/cancel-request.json",
+  "cancelAckPath": "/Users/example/.openclaw/host-jobs/job-123/cancelled.json",
   "model": "claude-opus-4-6",
   "timeoutSeconds": 300,
-  "commandLine": "/Users/example/.openclaw-node/bin/host-agent-run --runtime opencode ..."
+  "commandLine": "/Users/example/.openclaw-node/bin/host-agent-run --runtime opencode ...",
+  "errorCode": null,
+  "errorDetail": null,
+  "timedOut": false,
+  "cancelled": false,
+  "cancelRequestedAt": null,
+  "cancelReason": null,
+  "cancelSource": null
 }
 ```
+
+Error codes currently used:
+
+- `SPAWN_ERROR`
+- `RUNTIME_EXIT_NONZERO`
+- `RUNTIME_SIGNAL_EXIT`
+- `JOB_TIMEOUT`
+- `JOB_CANCELLED`
 
 ## `final.md`
 
@@ -104,6 +126,20 @@ Behavior:
 - on success, stdout becomes the final markdown when non-empty
 - on failure or timeout, the wrapper writes a normalized summary with runtime,
   state, command line, and captured output sections
+
+## Cancellation markers
+
+Unless overridden, the wrapper watches:
+
+```text
+<out-dir>/cancel-request.json
+```
+
+When cancellation is detected, the wrapper:
+
+1. sends termination to the child process
+2. marks `status.json` as `cancelled`
+3. writes `cancelled.json` with acknowledgement metadata
 
 ## Exit behavior
 

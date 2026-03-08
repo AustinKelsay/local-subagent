@@ -129,13 +129,57 @@ Then inspect:
 - `~/.openclaw/host-jobs/job-123/status.json`
 - `~/.openclaw/host-jobs/job-123/final.md`
 
-## 8. Environment overrides
+## 8. Supported runtimes
 
-The `opencode` adapter supports two environment overrides for operator control:
+- `opencode`
+- `ollama`
+- `goose`
+
+Notes:
+
+- `ollama` requires a model, either via `--model` or `HOST_AGENT_OLLAMA_MODEL`
+- `goose` can also use `HOST_AGENT_GOOSE_PROVIDER`
+
+## 9. Cancellation markers
+
+By default the wrapper watches:
+
+```text
+<out-dir>/cancel-request.json
+```
+
+If that file appears while the job is running, the wrapper terminates the child
+process, marks the job as `cancelled`, and writes:
+
+```text
+<out-dir>/cancelled.json
+```
+
+Example cancel marker:
+
+```json
+{
+  "requestedAt": "2026-03-08T19:00:00.000Z",
+  "reason": "operator requested stop",
+  "source": "manual"
+}
+```
+
+You can override the watched cancel marker path with `--cancel-file`.
+
+## 10. Environment overrides
+
+Adapter environment overrides:
 
 - `HOST_AGENT_OPENCODE_BIN`
 - `HOST_AGENT_OPENCODE_PREFIX_ARGS`
+- `HOST_AGENT_OLLAMA_BIN`
+- `HOST_AGENT_OLLAMA_PREFIX_ARGS`
+- `HOST_AGENT_OLLAMA_MODEL`
+- `HOST_AGENT_GOOSE_BIN`
+- `HOST_AGENT_GOOSE_PREFIX_ARGS`
+- `HOST_AGENT_GOOSE_PROVIDER`
 
-`HOST_AGENT_OPENCODE_PREFIX_ARGS` must be a JSON array of strings.
+Any `*_PREFIX_ARGS` value must be a JSON array of strings.
 
 This is mainly useful for testing and controlled wrapper setups.

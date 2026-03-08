@@ -18,13 +18,28 @@ async function makeJob() {
   return { root, cwd, outDir, taskFile };
 }
 
-function buildEnv(overrides = {}) {
-  return {
+function buildRuntimeEnv(runtime, overrides = {}) {
+  const base = {
     ...process.env,
-    HOST_AGENT_OPENCODE_BIN: process.execPath,
-    HOST_AGENT_OPENCODE_PREFIX_ARGS: JSON.stringify([
-      path.resolve("test/fixtures/fake-opencode.mjs"),
-    ]),
+  };
+
+  if (runtime === "opencode") {
+    base.HOST_AGENT_OPENCODE_BIN = process.execPath;
+    base.HOST_AGENT_OPENCODE_PREFIX_ARGS = JSON.stringify([path.resolve("test/fixtures/fake-opencode.mjs")]);
+  }
+
+  if (runtime === "ollama") {
+    base.HOST_AGENT_OLLAMA_BIN = process.execPath;
+    base.HOST_AGENT_OLLAMA_PREFIX_ARGS = JSON.stringify([path.resolve("test/fixtures/fake-ollama.mjs")]);
+  }
+
+  if (runtime === "goose") {
+    base.HOST_AGENT_GOOSE_BIN = process.execPath;
+    base.HOST_AGENT_GOOSE_PREFIX_ARGS = JSON.stringify([path.resolve("test/fixtures/fake-goose.mjs")]);
+  }
+
+  return {
+    ...base,
     ...overrides,
   };
 }
@@ -49,7 +64,7 @@ test("host-agent-run writes normalized completed artifacts", async () => {
       "10",
     ],
     {
-      env: buildEnv({
+      env: buildRuntimeEnv("opencode", {
         FAKE_OPENCODE_WRITE_ARTIFACT: artifactPath,
       }),
     },
@@ -94,7 +109,7 @@ test("host-agent-run accepts request.json input", async () => {
   );
 
   const result = await main(["--request-file", requestFile], {
-    env: buildEnv(),
+    env: buildRuntimeEnv("opencode"),
   });
 
   assert.equal(result.state, "completed");
@@ -112,7 +127,7 @@ test("host-agent-run rejects unknown runtimes", async () => {
       main(
         [
           "--runtime",
-          "goose",
+          "unknown-runtime",
           "--cwd",
           job.cwd,
           "--task-file",
@@ -120,10 +135,67 @@ test("host-agent-run rejects unknown runtimes", async () => {
           "--out-dir",
           job.outDir,
         ],
-        { env: buildEnv() },
+        { env: buildRuntimeEnv("opencode") },
       ),
-    /Unsupported runtime "goose"/,
+    /Unsupported runtime "unknown-runtime"/,
   );
+});
+
+test("host-agent-run supports ollama runtime", async () => {
+  const job = await makeJob();
+
+  const result = await main(
+    [
+      "--runtime",
+      "ollama",
+      "--cwd",
+      job.cwd,
+      "--task-file",
+      job.taskFile,
+      "--out-dir",
+      job.outDir,
+      "--model",
+      "llama3.2",
+    ],
+    {
+      env: buildRuntimeEnv("ollama"),
+    },
+  );
+
+  assert.equal(result.state, "completed");
+  const stdout = await readFile(path.join(job.outDir, "stdout.log"), "utf8");
+  assert.match(stdout, /fake-ollama ok/);
+  assert.match(stdout, /model=llama3.2/);
+});
+
+test("host-agent-run supports goose runtime", async () => {
+  const job = await makeJob();
+
+  const result = await main(
+    [
+      "--runtime",
+      "goose",
+      "--cwd",
+      job.cwd,
+      "--task-file",
+      job.taskFile,
+      "--out-dir",
+      job.outDir,
+      "--model",
+      "gpt-4.1",
+    ],
+    {
+      env: buildRuntimeEnv("goose", {
+        HOST_AGENT_GOOSE_PROVIDER: "openai",
+      }),
+    },
+  );
+
+  assert.equal(result.state, "completed");
+  const stdout = await readFile(path.join(job.outDir, "stdout.log"), "utf8");
+  assert.match(stdout, /fake-goose ok/);
+  assert.match(stdout, /provider=openai/);
+  assert.match(stdout, /model=gpt-4.1/);
 });
 
 test("host-agent-run marks timed out jobs", async () => {
@@ -145,7 +217,7 @@ test("host-agent-run marks timed out jobs", async () => {
           "1",
         ],
         {
-          env: buildEnv({
+          env: buildRuntimeEnv("opencode", {
             FAKE_OPENCODE_SLEEP_MS: "3000",
           }),
         },
@@ -157,5 +229,57 @@ test("host-agent-run marks timed out jobs", async () => {
   const finalText = await readFile(path.join(job.outDir, "final.md"), "utf8");
 
   assert.equal(status.state, "timed_out");
+  assert.equal(status.errorCode, "JOB_TIMEOUT");
   assert.match(finalText, /Timed out: yes/);
+});
+
+test("host-agent-run cancels when cancel marker is created", async () => {
+  const job = await makeJob();
+  const cancelPath = path.join(job.outDir, "cancel-request.json");
+
+  const runPromise = main(
+    [
+      "--runtime",
+      "opencode",
+      "--cwd",
+      job.cwd,
+      "--task-file",
+      job.taskFile,
+      "--out-dir",
+      job.outDir,
+    ],
+    {
+      env: buildRuntimeEnv("opencode", {
+        FAKE_OPENCODE_SLEEP_MS: "3000",
+      }),
+    },
+  );
+
+  setTimeout(async () => {
+    await writeFile(
+      cancelPath,
+      `${JSON.stringify(
+        {
+          requestedAt: "2026-03-08T19:00:00.000Z",
+          reason: "operator requested stop",
+          source: "test",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }, 100);
+
+  await assert.rejects(() => runPromise, /state=cancelled/);
+
+  const status = JSON.parse(await readFile(path.join(job.outDir, "status.json"), "utf8"));
+  const cancelAck = JSON.parse(await readFile(path.join(job.outDir, "cancelled.json"), "utf8"));
+
+  assert.equal(status.state, "cancelled");
+  assert.equal(status.errorCode, "JOB_CANCELLED");
+  assert.equal(status.cancelReason, "operator requested stop");
+  assert.equal(status.cancelSource, "test");
+  assert.equal(cancelAck.reason, "operator requested stop");
+  assert.equal(cancelAck.source, "test");
 });

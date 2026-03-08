@@ -7,6 +7,7 @@ import {
   buildFinalMarkdown,
   createJobPaths,
   ensureJobDir,
+  writeCancellationAck,
   writeFinalMarkdown,
   writeStatus,
 } from "../job-status.js";
@@ -127,6 +128,7 @@ function normalizeOptions(raw, request = {}) {
     timeoutSeconds,
     jobId: toStringOption(raw, "job-id") ?? toStringOption(request, "jobId"),
     requestFile: toStringOption(raw, "request-file"),
+    cancelFile: toStringOption(raw, "cancel-file") ?? toStringOption(request, "cancelFile"),
   };
 }
 
@@ -135,6 +137,65 @@ function shellEscape(value) {
     return value;
   }
   return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function resolveErrorCode({ state, signal, spawnError }) {
+  if (spawnError) {
+    return "SPAWN_ERROR";
+  }
+  if (state === "completed") {
+    return null;
+  }
+  if (state === "cancelled") {
+    return "JOB_CANCELLED";
+  }
+  if (state === "timed_out") {
+    return "JOB_TIMEOUT";
+  }
+  if (signal) {
+    return "RUNTIME_SIGNAL_EXIT";
+  }
+  return "RUNTIME_EXIT_NONZERO";
+}
+
+async function readCancellationMarker(cancelFile) {
+  try {
+    await access(cancelFile, constants.F_OK);
+  } catch {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(cancelFile, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return {
+        requestedAt:
+          typeof parsed.requestedAt === "string" && parsed.requestedAt.trim()
+            ? parsed.requestedAt
+            : null,
+        reason:
+          typeof parsed.reason === "string" && parsed.reason.trim()
+            ? parsed.reason
+            : null,
+        source:
+          typeof parsed.source === "string" && parsed.source.trim()
+            ? parsed.source
+            : "marker-file",
+      };
+    }
+  } catch {
+    return {
+      requestedAt: null,
+      reason: "Cancellation marker detected",
+      source: "marker-file",
+    };
+  }
+
+  return {
+    requestedAt: null,
+    reason: null,
+    source: "marker-file",
+  };
 }
 
 async function runChildProcess(launchSpec, options, deps) {
@@ -147,13 +208,34 @@ async function runChildProcess(launchSpec, options, deps) {
 
   return await new Promise((resolve, reject) => {
     let timedOut = false;
+    let cancelled = false;
+    let stopping = false;
+    let cancelRequestedAt = null;
+    let cancelReason = null;
+    let cancelSource = null;
     let timeoutId;
     let killId;
+    let cancelPollId;
 
     const stdoutChunks = [];
     const stderrChunks = [];
     const stdoutStream = createWriteStream(options.paths.stdoutPath, { flags: "w" });
     const stderrStream = createWriteStream(options.paths.stderrPath, { flags: "w" });
+
+    const stopChild = (reason) => {
+      if (stopping) {
+        return;
+      }
+      stopping = true;
+      if (reason === "timeout") {
+        timedOut = true;
+      }
+      child.kill("SIGTERM");
+      killId = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, 2000);
+      killId.unref();
+    };
 
     if (child.stdout) {
       child.stdout.on("data", (chunk) => {
@@ -171,15 +253,32 @@ async function runChildProcess(launchSpec, options, deps) {
 
     if (options.timeoutSeconds) {
       timeoutId = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGTERM");
-        killId = setTimeout(() => {
-          child.kill("SIGKILL");
-        }, 2000);
-        killId.unref();
+        stopChild("timeout");
       }, options.timeoutSeconds * 1000);
       timeoutId.unref();
     }
+
+    const pollForCancellation = async () => {
+      if (cancelled || timedOut) {
+        return;
+      }
+
+      const marker = await readCancellationMarker(options.cancelFile);
+      if (!marker) {
+        return;
+      }
+
+      cancelled = true;
+      cancelRequestedAt = marker.requestedAt ?? deps.now().toISOString();
+      cancelReason = marker.reason;
+      cancelSource = marker.source ?? "marker-file";
+      stopChild("cancel");
+    };
+
+    cancelPollId = setInterval(() => {
+      void pollForCancellation();
+    }, 250);
+    cancelPollId.unref();
 
     const finalizeStreams = () =>
       Promise.all([
@@ -194,6 +293,9 @@ async function runChildProcess(launchSpec, options, deps) {
       if (killId) {
         clearTimeout(killId);
       }
+      if (cancelPollId) {
+        clearInterval(cancelPollId);
+      }
       await finalizeStreams();
       reject(error);
     });
@@ -205,11 +307,18 @@ async function runChildProcess(launchSpec, options, deps) {
       if (killId) {
         clearTimeout(killId);
       }
+      if (cancelPollId) {
+        clearInterval(cancelPollId);
+      }
       await finalizeStreams();
       resolve({
         code,
         signal,
         timedOut,
+        cancelled,
+        cancelRequestedAt,
+        cancelReason,
+        cancelSource,
         stdoutText: Buffer.concat(stdoutChunks).toString("utf8"),
         stderrText: Buffer.concat(stderrChunks).toString("utf8"),
       });
@@ -229,14 +338,20 @@ export async function main(argv, deps = {}) {
     ? await loadRequestFile(path.resolve(rawOptions["request-file"]))
     : {};
   const options = normalizeOptions(rawOptions, request);
+
   await validateDirectory(options.cwd, "--cwd");
   await validateFile(options.taskFile, "--task-file");
+
+  if (options.cancelFile && !path.isAbsolute(options.cancelFile)) {
+    throw createUsageError("--cancel-file must be an absolute path");
+  }
 
   await ensureJobDir(options.outDir);
   const paths = createJobPaths(options.outDir);
   await mkdir(options.outDir, { recursive: true });
 
   const jobId = options.jobId || path.basename(options.outDir);
+  const cancelFile = options.cancelFile ?? paths.cancelPath;
   const taskText = await readFile(options.taskFile, "utf8");
   if (!taskText.trim()) {
     throw createUsageError("--task-file must not be empty");
@@ -271,23 +386,37 @@ export async function main(argv, deps = {}) {
     stdoutPath: paths.stdoutPath,
     stderrPath: paths.stderrPath,
     finalPath: paths.finalPath,
+    cancelPath: cancelFile,
+    cancelAckPath: paths.cancelAckPath,
     model: options.model ?? null,
     timeoutSeconds: options.timeoutSeconds ?? null,
     commandLine,
+    errorCode: null,
+    errorDetail: null,
+    timedOut: false,
+    cancelled: false,
+    cancelRequestedAt: null,
+    cancelReason: null,
+    cancelSource: null,
   });
 
   let result;
   try {
-    result = await runChildProcess(launchSpec, { ...options, paths }, runtimeDeps);
+    result = await runChildProcess(launchSpec, { ...options, paths, cancelFile }, runtimeDeps);
   } catch (error) {
     const finishedAt = runtimeDeps.now().toISOString();
+    const errorDetail = error instanceof Error ? error.message : String(error);
+    const errorCode = resolveErrorCode({ state: "failed", spawnError: true });
     const markdown = buildFinalMarkdown({
       runtime: options.runtime,
       state: "failed",
       commandLine,
       stdoutText: "",
-      stderrText: error instanceof Error ? error.message : String(error),
+      stderrText: errorDetail,
       timedOut: false,
+      cancelled: false,
+      errorCode,
+      errorDetail,
     });
     await writeFinalMarkdown(paths.finalPath, markdown);
     await writeStatus(paths.statusPath, {
@@ -305,20 +434,41 @@ export async function main(argv, deps = {}) {
       stdoutPath: paths.stdoutPath,
       stderrPath: paths.stderrPath,
       finalPath: paths.finalPath,
+      cancelPath: cancelFile,
+      cancelAckPath: paths.cancelAckPath,
       model: options.model ?? null,
       timeoutSeconds: options.timeoutSeconds ?? null,
       commandLine,
-      error: error instanceof Error ? error.message : String(error),
+      errorCode,
+      errorDetail,
+      timedOut: false,
+      cancelled: false,
+      cancelRequestedAt: null,
+      cancelReason: null,
+      cancelSource: null,
     });
     throw error;
   }
 
   const finishedAt = runtimeDeps.now().toISOString();
-  const state = result.timedOut
-    ? "timed_out"
-    : result.code === 0
-      ? "completed"
-      : "failed";
+  const state = result.cancelled
+    ? "cancelled"
+    : result.timedOut
+      ? "timed_out"
+      : result.code === 0
+        ? "completed"
+        : "failed";
+  const errorCode = resolveErrorCode({ state, signal: result.signal });
+  const errorDetail =
+    state === "completed"
+      ? null
+      : result.cancelled
+        ? result.cancelReason ?? `Cancellation marker detected at ${cancelFile}`
+        : result.timedOut
+          ? `Runtime exceeded timeout of ${options.timeoutSeconds} seconds`
+          : result.signal
+            ? `Runtime exited due to signal ${result.signal}`
+            : `Runtime exited with code ${result.code}`;
 
   await writeFinalMarkdown(
     paths.finalPath,
@@ -329,8 +479,24 @@ export async function main(argv, deps = {}) {
       stdoutText: result.stdoutText,
       stderrText: result.stderrText,
       timedOut: result.timedOut,
+      cancelled: result.cancelled,
+      errorCode,
+      errorDetail,
     }),
   );
+
+  if (result.cancelled) {
+    await writeCancellationAck(paths.cancelAckPath, {
+      jobId,
+      runtime: options.runtime,
+      state,
+      cancelPath: cancelFile,
+      requestedAt: result.cancelRequestedAt,
+      acknowledgedAt: finishedAt,
+      reason: result.cancelReason,
+      source: result.cancelSource,
+    });
+  }
 
   await writeStatus(paths.statusPath, {
     jobId,
@@ -347,9 +513,18 @@ export async function main(argv, deps = {}) {
     stdoutPath: paths.stdoutPath,
     stderrPath: paths.stderrPath,
     finalPath: paths.finalPath,
+    cancelPath: cancelFile,
+    cancelAckPath: paths.cancelAckPath,
     model: options.model ?? null,
     timeoutSeconds: options.timeoutSeconds ?? null,
     commandLine,
+    errorCode,
+    errorDetail,
+    timedOut: result.timedOut,
+    cancelled: result.cancelled,
+    cancelRequestedAt: result.cancelRequestedAt,
+    cancelReason: result.cancelReason,
+    cancelSource: result.cancelSource,
   });
 
   if (state !== "completed") {

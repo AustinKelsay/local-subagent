@@ -16,9 +16,11 @@ It is intentionally not a generic remote shell.
 - captures stdout and stderr
 - writes normalized result artifacts into a job directory
 
-The current MVP supports one runtime:
+The current wrapper supports:
 
 - `opencode`
+- `ollama`
+- `goose`
 
 ## Why this exists
 
@@ -54,6 +56,7 @@ Optional flags:
 - `--model <name>`
 - `--timeout-seconds <n>`
 - `--job-id <id>`
+- `--cancel-file <absolute-path>`
 
 Example:
 
@@ -81,6 +84,8 @@ The wrapper writes these files under `--out-dir`:
 - `stdout.log`
 - `stderr.log`
 - `final.md`
+- `cancel-request.json`
+- `cancelled.json`
 
 Typical host job layout:
 
@@ -92,6 +97,8 @@ Typical host job layout:
   stdout.log
   stderr.log
   final.md
+  cancel-request.json
+  cancelled.json
 ```
 
 ## Quick start
@@ -139,5 +146,5 @@ See:
 - one-shot jobs only
 - no interactive session handoff
 - no streaming log transport back into chat
-- no cancellation workflow yet
-- only one runtime adapter today
+- cancellation is marker-file based, not a managed control plane yet
+- runtime adapters are still intentionally thin wrappers
