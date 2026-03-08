@@ -1,150 +1,56 @@
 # local-subagent
 
-Host-side wrapper for the OpenClaw host-subagent MVP.
+Host-side wrapper for running narrow OpenClaw jobs on a paired Mac node.
 
-`local-subagent` is a small Node-based wrapper that runs on a paired macOS node
-host and executes a narrow, allowlisted host job on behalf of a containerized
-OpenClaw gateway.
-
-It is intentionally not a generic remote shell.
+This repo is the custom codebase. It is not a fork of OpenClaw and it is not a
+generic remote shell.
 
 ## What it does
 
-- accepts one-shot host jobs
-- validates a strict CLI contract
-- launches one supported runtime
-- captures stdout and stderr
-- writes normalized result artifacts into a job directory
+- runs one-shot host jobs
+- supports `opencode`, `ollama`, and `goose`
+- writes normalized artifacts into a job directory
+- supports request-file input and marker-file cancellation
 
-The current wrapper supports:
+## Core workflow
 
-- `opencode`
-- `ollama`
-- `goose`
+1. OpenClaw writes a host job bundle (`task.md` + `request.json`)
+2. a paired node host runs `host-agent-run --request-file ...`
+3. the wrapper writes:
+   - `status.json`
+   - `stdout.log`
+   - `stderr.log`
+   - `final.md`
+   - `cancelled.json` when cancellation is acknowledged
+4. OpenClaw reads the artifacts back and summarizes the result
 
-## Why this exists
-
-The goal is to let Docker OpenClaw delegate a specific task to the local Mac
-without teaching the container to escape Docker directly.
-
-The trust boundary is:
-
-- OpenClaw gateway stays in Docker
-- a paired node host exposes `system.run`
-- only one wrapper binary is allowlisted on the node host
-- the wrapper launches a known runtime and writes results into a known path
-
-## CLI
-
-Installed binary:
-
-- `host-agent-run`
-
-Required flags:
-
-- `--runtime <id>`
-- `--cwd <absolute-path>`
-- `--task-file <absolute-path>`
-- `--out-dir <absolute-path>`
-
-Alternative input:
-
-- `--request-file <absolute-path-to-request.json>`
-
-Optional flags:
-
-- `--model <name>`
-- `--timeout-seconds <n>`
-- `--job-id <id>`
-- `--cancel-file <absolute-path>`
-
-Example:
-
-```bash
-host-agent-run \
-  --runtime opencode \
-  --cwd /Users/example/project \
-  --task-file /Users/example/.openclaw/host-jobs/job-123/task.md \
-  --out-dir /Users/example/.openclaw/host-jobs/job-123 \
-  --model claude-opus-4-6 \
-  --timeout-seconds 300
-```
-
-Or drive it from a request file:
-
-```bash
-host-agent-run --request-file /Users/example/.openclaw/host-jobs/job-123/request.json
-```
-
-## Job artifacts
-
-The wrapper writes these files under `--out-dir`:
-
-- `status.json`
-- `stdout.log`
-- `stderr.log`
-- `final.md`
-- `cancel-request.json`
-- `cancelled.json`
-
-Typical host job layout:
+Typical job path:
 
 ```text
 ~/.openclaw/host-jobs/<job-id>/
-  task.md
-  request.json
-  status.json
-  stdout.log
-  stderr.log
-  final.md
-  cancel-request.json
-  cancelled.json
+```
+
+Stable wrapper path:
+
+```text
+~/.openclaw-node/bin/host-agent-run
 ```
 
 ## Quick start
 
-Requirements:
-
-- Node.js 22+
-- a host runtime installed locally if you want to do real runs
-
-Run tests:
-
 ```bash
 npm test
-```
-
-Make the wrapper executable:
-
-```bash
-chmod +x bin/host-agent-run
-```
-
-Optional stable allowlist path:
-
-```bash
 ./scripts/install-local-subagent.sh
 ```
 
-## OpenClaw integration
+Run directly:
 
-This repo is designed to be called by OpenClaw through:
+```bash
+host-agent-run --request-file ~/.openclaw/host-jobs/job-123/request.json
+```
 
-- a paired node host
-- `exec` with `host=node`
-- `security=allowlist`
-- an allowlist entry for the wrapper path only
+## Read next
 
-See:
-
-- [Setup](./docs/setup.md)
-- [Wrapper Contract](./docs/wrapper-contract.md)
-- [Roadmap](./docs/roadmap.md)
-
-## Current limitations
-
-- one-shot jobs only
-- no interactive session handoff
-- no streaming log transport back into chat
-- cancellation is marker-file based, not a managed control plane yet
-- runtime adapters are still intentionally thin wrappers
+- setup: [docs/setup.md](./docs/setup.md)
+- wrapper contract: [docs/wrapper-contract.md](./docs/wrapper-contract.md)
+- roadmap: [docs/roadmap.md](./docs/roadmap.md)
