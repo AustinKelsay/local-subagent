@@ -1,0 +1,17 @@
+{
+  "name": "local-subagent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-side wrapper for the OpenClaw local subagent MVP",
+  "type": "module",
+  "bin": {
+    "host-agent-run": "./bin/host-agent-run"
+  },
+  "scripts": {
+    "smoke": "node --test test/host-agent-run.test.js",
+    "test": "node --test test/host-agent-run.test.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
