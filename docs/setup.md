@@ -16,6 +16,7 @@ From this repo:
 ```bash
 npm test
 chmod +x bin/host-agent-run
+chmod +x scripts/install-local-subagent.sh
 ```
 
 ## 3. Pick a stable wrapper path
@@ -23,14 +24,19 @@ chmod +x bin/host-agent-run
 For allowlist-friendly operation, expose the wrapper at a fixed absolute path:
 
 ```bash
-mkdir -p ~/.openclaw-node/bin
-ln -sf "$PWD/bin/host-agent-run" ~/.openclaw-node/bin/host-agent-run
+./scripts/install-local-subagent.sh
 ```
 
 Recommended wrapper path:
 
 ```text
 ~/.openclaw-node/bin/host-agent-run
+```
+
+The install script also creates:
+
+```text
+~/.openclaw/host-jobs/
 ```
 
 ## 4. Pair the node host to OpenClaw
@@ -98,6 +104,24 @@ EOF
   --task-file ~/.openclaw/host-jobs/job-123/task.md \
   --out-dir ~/.openclaw/host-jobs/job-123 \
   --timeout-seconds 300
+```
+
+Or with a request file:
+
+```bash
+cat > ~/.openclaw/host-jobs/job-123/request.json <<'EOF'
+{
+  "jobId": "job-123",
+  "runtime": "opencode",
+  "cwd": "/Users/example/project",
+  "taskFile": "/Users/example/.openclaw/host-jobs/job-123/task.md",
+  "outDir": "/Users/example/.openclaw/host-jobs/job-123",
+  "timeoutSeconds": 300
+}
+EOF
+
+~/.openclaw-node/bin/host-agent-run \
+  --request-file ~/.openclaw/host-jobs/job-123/request.json
 ```
 
 Then inspect:

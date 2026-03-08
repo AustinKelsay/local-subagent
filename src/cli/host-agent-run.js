@@ -40,6 +40,29 @@ function parseArgs(argv) {
   return options;
 }
 
+async function loadRequestFile(requestFilePath) {
+  if (!path.isAbsolute(requestFilePath)) {
+    throw createUsageError("--request-file must be an absolute path");
+  }
+
+  await access(requestFilePath, constants.R_OK);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(requestFilePath, "utf8"));
+  } catch (error) {
+    throw createUsageError(
+      `--request-file must contain valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw createUsageError("--request-file must contain a JSON object");
+  }
+
+  return /** @type {Record<string, unknown>} */ (parsed);
+}
+
 async function validateDirectory(absolutePath, label) {
   if (!path.isAbsolute(absolutePath)) {
     throw createUsageError(`${label} must be an absolute path`);
@@ -54,34 +77,56 @@ async function validateFile(absolutePath, label) {
   await access(absolutePath, constants.R_OK);
 }
 
-function normalizeOptions(raw) {
-  const runtime = raw.runtime;
-  const cwd = raw.cwd;
-  const taskFile = raw["task-file"];
-  const outDir = raw["out-dir"];
+function toStringOption(source, key) {
+  const value = source[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function toPositiveIntOption(source, key, label) {
+  if (source[key] === undefined) {
+    return undefined;
+  }
+
+  const rawValue = source[key];
+  const numeric =
+    typeof rawValue === "number"
+      ? rawValue
+      : typeof rawValue === "string"
+        ? Number.parseInt(rawValue, 10)
+        : Number.NaN;
+
+  if (!Number.isFinite(numeric) || numeric < 1) {
+    throw createUsageError(`${label} must be a positive integer`);
+  }
+
+  return numeric;
+}
+
+function normalizeOptions(raw, request = {}) {
+  const runtime = toStringOption(raw, "runtime") ?? toStringOption(request, "runtime");
+  const cwd = toStringOption(raw, "cwd") ?? toStringOption(request, "cwd");
+  const taskFile = toStringOption(raw, "task-file") ?? toStringOption(request, "taskFile");
+  const outDir = toStringOption(raw, "out-dir") ?? toStringOption(request, "outDir");
 
   if (!runtime || !cwd || !taskFile || !outDir) {
     throw createUsageError(
-      "Required flags: --runtime <id> --cwd <path> --task-file <path> --out-dir <path>",
+      "Required input: --runtime <id> --cwd <path> --task-file <path> --out-dir <path> or --request-file <path>",
     );
   }
 
-  let timeoutSeconds;
-  if (raw["timeout-seconds"] !== undefined) {
-    timeoutSeconds = Number.parseInt(raw["timeout-seconds"], 10);
-    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1) {
-      throw createUsageError("--timeout-seconds must be a positive integer");
-    }
-  }
+  const timeoutSeconds =
+    toPositiveIntOption(raw, "timeout-seconds", "--timeout-seconds") ??
+    toPositiveIntOption(request, "timeoutSeconds", "request.timeoutSeconds");
 
   return {
     runtime,
     cwd: path.resolve(cwd),
     taskFile: path.resolve(taskFile),
     outDir: path.resolve(outDir),
-    model: raw.model,
+    model: toStringOption(raw, "model") ?? toStringOption(request, "model"),
     timeoutSeconds,
-    jobId: raw["job-id"],
+    jobId: toStringOption(raw, "job-id") ?? toStringOption(request, "jobId"),
+    requestFile: toStringOption(raw, "request-file"),
   };
 }
 
@@ -179,7 +224,11 @@ export async function main(argv, deps = {}) {
     now: deps.now ?? (() => new Date()),
   };
 
-  const options = normalizeOptions(parseArgs(argv));
+  const rawOptions = parseArgs(argv);
+  const request = rawOptions["request-file"]
+    ? await loadRequestFile(path.resolve(rawOptions["request-file"]))
+    : {};
+  const options = normalizeOptions(rawOptions, request);
   await validateDirectory(options.cwd, "--cwd");
   await validateFile(options.taskFile, "--task-file");
 
@@ -217,6 +266,7 @@ export async function main(argv, deps = {}) {
     signal: null,
     cwd: options.cwd,
     taskFile: options.taskFile,
+    requestFile: options.requestFile ?? null,
     outDir: options.outDir,
     stdoutPath: paths.stdoutPath,
     stderrPath: paths.stderrPath,
@@ -250,6 +300,7 @@ export async function main(argv, deps = {}) {
       signal: null,
       cwd: options.cwd,
       taskFile: options.taskFile,
+      requestFile: options.requestFile ?? null,
       outDir: options.outDir,
       stdoutPath: paths.stdoutPath,
       stderrPath: paths.stderrPath,
@@ -291,6 +342,7 @@ export async function main(argv, deps = {}) {
     signal: result.signal,
     cwd: options.cwd,
     taskFile: options.taskFile,
+    requestFile: options.requestFile ?? null,
     outDir: options.outDir,
     stdoutPath: paths.stdoutPath,
     stderrPath: paths.stderrPath,

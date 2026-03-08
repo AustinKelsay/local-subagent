@@ -45,6 +45,10 @@ Required flags:
 - `--task-file <absolute-path>`
 - `--out-dir <absolute-path>`
 
+Alternative input:
+
+- `--request-file <absolute-path-to-request.json>`
+
 Optional flags:
 
 - `--model <name>`
@@ -61,6 +65,12 @@ host-agent-run \
   --out-dir /Users/example/.openclaw/host-jobs/job-123 \
   --model claude-opus-4-6 \
   --timeout-seconds 300
+```
+
+Or drive it from a request file:
+
+```bash
+host-agent-run --request-file /Users/example/.openclaw/host-jobs/job-123/request.json
 ```
 
 ## Job artifacts
@@ -106,8 +116,7 @@ chmod +x bin/host-agent-run
 Optional stable allowlist path:
 
 ```bash
-mkdir -p ~/.openclaw-node/bin
-ln -sf "$PWD/bin/host-agent-run" ~/.openclaw-node/bin/host-agent-run
+./scripts/install-local-subagent.sh
 ```
 
 ## OpenClaw integration

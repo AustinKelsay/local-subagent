@@ -20,6 +20,12 @@ host-agent-run \
   [--job-id <id>]
 ```
 
+Alternative form:
+
+```bash
+host-agent-run --request-file <absolute-path>
+```
+
 ## Input requirements
 
 - `--cwd` must be an absolute readable path
@@ -28,6 +34,19 @@ host-agent-run \
 - `--task-file` must not be empty
 - `--timeout-seconds`, when provided, must be a positive integer
 - runtime must be explicitly supported by the wrapper
+- `--request-file`, when used, must be an absolute path to a JSON object
+
+Request file fields:
+
+- `jobId`
+- `runtime`
+- `cwd`
+- `taskFile`
+- `outDir`
+- `model`
+- `timeoutSeconds`
+
+CLI flags win over request-file values when both are provided.
 
 ## Current runtime support
 
