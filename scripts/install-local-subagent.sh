@@ -8,7 +8,14 @@ JOB_DIR="${HOME}/.openclaw/host-jobs"
 
 mkdir -p "${TARGET_DIR}"
 mkdir -p "${JOB_DIR}"
-ln -sf "${ROOT_DIR}/bin/host-agent-run" "${TARGET_BIN}"
+rm -f "${TARGET_BIN}"
+cat > "${TARGET_BIN}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec node "${ROOT_DIR}/bin/host-agent-run" "\$@"
+EOF
+chmod 755 "${TARGET_BIN}"
 
 cat <<EOF
 Installed local-subagent wrapper:

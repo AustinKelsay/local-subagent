@@ -12,6 +12,15 @@ generic remote shell.
 - writes normalized artifacts into a job directory
 - supports request-file input and marker-file cancellation
 
+## Runtime guidance
+
+- use `goose` or `opencode` when the host job needs real tools or filesystem
+  inspection
+- use `ollama` when you already have the relevant host context and want a local
+  model to summarize or transform it
+- do not assume plain `ollama run ...` can truthfully inspect the host machine
+  by itself
+
 ## Core workflow
 
 1. OpenClaw writes a host job bundle (`task.md` + `request.json`)

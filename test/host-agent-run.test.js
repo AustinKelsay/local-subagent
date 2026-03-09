@@ -119,6 +119,38 @@ test("host-agent-run accepts request.json input", async () => {
   assert.equal(status.requestFile, requestFile);
 });
 
+test("host-agent-run accepts request.json with null timeoutSeconds", async () => {
+  const job = await makeJob();
+  const requestFile = path.join(job.outDir, "request.json");
+
+  await writeFile(
+    requestFile,
+    `${JSON.stringify(
+      {
+        jobId: "job-from-request-null-timeout",
+        runtime: "opencode",
+        cwd: job.cwd,
+        taskFile: job.taskFile,
+        outDir: job.outDir,
+        model: "claude-sonnet",
+        timeoutSeconds: null,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const result = await main(["--request-file", requestFile], {
+    env: buildRuntimeEnv("opencode"),
+  });
+
+  assert.equal(result.state, "completed");
+  const status = JSON.parse(await readFile(path.join(job.outDir, "status.json"), "utf8"));
+  assert.equal(status.jobId, "job-from-request-null-timeout");
+  assert.equal(status.timeoutSeconds, null);
+});
+
 test("host-agent-run rejects unknown runtimes", async () => {
   const job = await makeJob();
 

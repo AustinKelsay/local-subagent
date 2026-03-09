@@ -12,6 +12,9 @@
 
 ## Next likely steps
 
+- make `goose` the default harness for host inspection tasks
+- add recipe/system-prompt conventions for `goose` host jobs
+- support feeding gathered host context into `ollama` for local summarization
 - add artifact attachment conventions
 - add richer cancel semantics beyond marker files
 - add log streaming or polling helpers

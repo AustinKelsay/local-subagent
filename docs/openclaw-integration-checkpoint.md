@@ -11,10 +11,14 @@ This note captures the current OpenClaw-side integration state for
   `/Users/plebdev/.openclaw-node/bin/host-agent-run`
 - host job artifacts live under:
   `/Users/plebdev/.openclaw/host-jobs`
+- the deterministic launcher path now goes through
+  `skills/host-subagent/scripts/run-host-job.mjs`
+- that launcher now uses `openclaw --profile host-subagent nodes invoke
+  --command system.run ...` with a canonical Mac `cwd`
 
-The wrapper is still launched through OpenClaw's generic `exec host=node`
-mechanism. This is good enough for the MVP, but it is not the ideal long-term
-transport.
+The in-chat model can still fall back to the older generic host-exec path if it
+does not choose the launcher. That routing gap is currently the main OpenClaw
+overlay problem.
 
 ## Important learned behavior
 
@@ -54,6 +58,37 @@ Current intended OpenClaw defaults:
 Use the node id, not the display name. Binding to `Mac Host Node` by name
 caused `unknown node` failures in live testing.
 
+## What is actually working
+
+- the hardened launcher path can create a host job bundle
+- it can invoke the paired Mac node
+- it can launch `host-agent-run --request-file ...`
+- it can read back `status.json` and the other artifacts
+
+This means the transport problem is mostly solved when the launcher path is the
+path being used.
+
+## What is still flaky
+
+- natural-language Telegram turns can still bypass the launcher and assemble
+  raw host exec calls by hand
+- when that happens, the session can regress into older failures such as:
+  - `SYSTEM_RUN_DENIED: approval requires an existing canonical cwd`
+  - sandbox fallback instead of the paired-node route
+- gateway restarts still force repair/reconnect churn for the node and CLI
+  identities
+
+## Runtime reality
+
+Transport and runtime capability are separate concerns.
+
+- `goose` or `opencode` should be the default host runtimes for tasks that
+  require real tool use or filesystem inspection
+- plain `ollama` is currently best treated as a local summarizer over already
+  collected host context
+- a request such as "tell me what is in Desktop" should not rely on bare
+  `ollama run ...` alone to inspect the filesystem truthfully
+
 ## Operational caveats
 
 - Telegram `/exec ...` session overrides were unreliable in this setup, so
@@ -74,15 +109,16 @@ caused `unknown node` failures in live testing.
 
 ## Next architectural step
 
-The current `exec` wrapper path is the right MVP bridge, but not the right
+The current direct launcher path is the right MVP bridge, but not the right
 final architecture.
 
 The better long-term shape is:
 
 - OpenClaw writes the host job bundle
-- OpenClaw calls a dedicated host-subagent/node action
+- OpenClaw routes local-host requests through a deterministic host-subagent
+  launcher instead of ad hoc chat-side exec assembly
 - the wrapper or runtime executes on the Mac host
 - OpenClaw reads artifacts back
 
 That would avoid generic `exec` policy friction leaking into the host-subagent
-flow.
+flow and reduce model-dependent routing mistakes.

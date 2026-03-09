@@ -84,7 +84,7 @@ function toStringOption(source, key) {
 }
 
 function toPositiveIntOption(source, key, label) {
-  if (source[key] === undefined) {
+  if (source[key] === undefined || source[key] === null) {
     return undefined;
   }
 
