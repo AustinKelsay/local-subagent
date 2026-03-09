@@ -53,4 +53,5 @@ host-agent-run --request-file ~/.openclaw/host-jobs/job-123/request.json
 
 - setup: [docs/setup.md](./docs/setup.md)
 - wrapper contract: [docs/wrapper-contract.md](./docs/wrapper-contract.md)
+- OpenClaw integration checkpoint: [docs/openclaw-integration-checkpoint.md](./docs/openclaw-integration-checkpoint.md)
 - roadmap: [docs/roadmap.md](./docs/roadmap.md)
