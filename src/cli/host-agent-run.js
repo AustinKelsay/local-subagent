@@ -11,6 +11,7 @@ import {
   writeFinalMarkdown,
   writeStatus,
 } from "../job-status.js";
+import { resolveExecutionRequest } from "../request-intents.js";
 import { getRuntimeAdapter } from "../runtimes/index.js";
 
 function createUsageError(message) {
@@ -105,13 +106,20 @@ function toPositiveIntOption(source, key, label) {
 
 function normalizeOptions(raw, request = {}) {
   const runtime = toStringOption(raw, "runtime") ?? toStringOption(request, "runtime");
+  const intent = toStringOption(raw, "intent") ?? toStringOption(request, "intent");
   const cwd = toStringOption(raw, "cwd") ?? toStringOption(request, "cwd");
   const taskFile = toStringOption(raw, "task-file") ?? toStringOption(request, "taskFile");
   const outDir = toStringOption(raw, "out-dir") ?? toStringOption(request, "outDir");
+  const targetPath = toStringOption(raw, "target-path") ?? toStringOption(request, "targetPath");
+  const requestedModel =
+    toStringOption(raw, "preferred-model") ??
+    toStringOption(request, "preferredModel") ??
+    toStringOption(raw, "model") ??
+    toStringOption(request, "model");
 
-  if (!runtime || !cwd || !taskFile || !outDir) {
+  if ((!runtime && !intent) || !cwd || !outDir) {
     throw createUsageError(
-      "Required input: --runtime <id> --cwd <path> --task-file <path> --out-dir <path> or --request-file <path>",
+      "Required input: --runtime <id> or --intent <id>, plus --cwd <path> and --out-dir <path>, or --request-file <path>",
     );
   }
 
@@ -121,10 +129,12 @@ function normalizeOptions(raw, request = {}) {
 
   return {
     runtime,
+    intent,
     cwd: path.resolve(cwd),
-    taskFile: path.resolve(taskFile),
+    taskFile: taskFile ? path.resolve(taskFile) : null,
     outDir: path.resolve(outDir),
-    model: toStringOption(raw, "model") ?? toStringOption(request, "model"),
+    targetPath: targetPath ? path.resolve(targetPath) : null,
+    requestedModel,
     timeoutSeconds,
     jobId: toStringOption(raw, "job-id") ?? toStringOption(request, "jobId"),
     requestFile: toStringOption(raw, "request-file"),
@@ -340,7 +350,9 @@ export async function main(argv, deps = {}) {
   const options = normalizeOptions(rawOptions, request);
 
   await validateDirectory(options.cwd, "--cwd");
-  await validateFile(options.taskFile, "--task-file");
+  if (options.taskFile) {
+    await validateFile(options.taskFile, "--task-file");
+  }
 
   if (options.cancelFile && !path.isAbsolute(options.cancelFile)) {
     throw createUsageError("--cancel-file must be an absolute path");
@@ -352,18 +364,26 @@ export async function main(argv, deps = {}) {
 
   const jobId = options.jobId || path.basename(options.outDir);
   const cancelFile = options.cancelFile ?? paths.cancelPath;
-  const taskText = await readFile(options.taskFile, "utf8");
-  if (!taskText.trim()) {
+  const taskText = options.taskFile ? await readFile(options.taskFile, "utf8") : "";
+  if (options.taskFile && !taskText.trim()) {
     throw createUsageError("--task-file must not be empty");
   }
 
-  const runtime = getRuntimeAdapter(options.runtime);
-  const launchSpec = runtime.buildLaunchSpec({
+  const execution = resolveExecutionRequest({
+    runtime: options.runtime,
+    intent: options.intent,
     cwd: options.cwd,
-    outDir: options.outDir,
-    taskFile: options.taskFile,
+    targetPath: options.targetPath,
     taskText,
-    model: options.model,
+    requestedModel: options.requestedModel,
+  });
+  const runtime = getRuntimeAdapter(execution.runtime);
+  const launchSpec = runtime.buildLaunchSpec({
+    cwd: execution.cwd,
+    outDir: options.outDir,
+    taskFile: options.taskFile ?? path.join(options.outDir, "task.md"),
+    taskText: execution.taskText,
+    model: execution.model ?? undefined,
     timeoutSeconds: options.timeoutSeconds,
     env: runtimeDeps.env,
   });
@@ -373,13 +393,16 @@ export async function main(argv, deps = {}) {
 
   await writeStatus(paths.statusPath, {
     jobId,
-    runtime: options.runtime,
+    runtime: execution.runtime,
     state: "running",
     startedAt,
     finishedAt: null,
     exitCode: null,
     signal: null,
-    cwd: options.cwd,
+    inputMode: execution.inputMode,
+    intent: execution.intent,
+    targetPath: execution.targetPath,
+    cwd: execution.cwd,
     taskFile: options.taskFile,
     requestFile: options.requestFile ?? null,
     outDir: options.outDir,
@@ -388,7 +411,8 @@ export async function main(argv, deps = {}) {
     finalPath: paths.finalPath,
     cancelPath: cancelFile,
     cancelAckPath: paths.cancelAckPath,
-    model: options.model ?? null,
+    model: execution.model ?? null,
+    requestedModel: execution.requestedModel ?? null,
     timeoutSeconds: options.timeoutSeconds ?? null,
     commandLine,
     errorCode: null,
@@ -408,7 +432,7 @@ export async function main(argv, deps = {}) {
     const errorDetail = error instanceof Error ? error.message : String(error);
     const errorCode = resolveErrorCode({ state: "failed", spawnError: true });
     const markdown = buildFinalMarkdown({
-      runtime: options.runtime,
+      runtime: execution.runtime,
       state: "failed",
       commandLine,
       stdoutText: "",
@@ -421,13 +445,16 @@ export async function main(argv, deps = {}) {
     await writeFinalMarkdown(paths.finalPath, markdown);
     await writeStatus(paths.statusPath, {
       jobId,
-      runtime: options.runtime,
+      runtime: execution.runtime,
       state: "failed",
       startedAt,
       finishedAt,
       exitCode: null,
       signal: null,
-      cwd: options.cwd,
+      inputMode: execution.inputMode,
+      intent: execution.intent,
+      targetPath: execution.targetPath,
+      cwd: execution.cwd,
       taskFile: options.taskFile,
       requestFile: options.requestFile ?? null,
       outDir: options.outDir,
@@ -436,7 +463,8 @@ export async function main(argv, deps = {}) {
       finalPath: paths.finalPath,
       cancelPath: cancelFile,
       cancelAckPath: paths.cancelAckPath,
-      model: options.model ?? null,
+      model: execution.model ?? null,
+      requestedModel: execution.requestedModel ?? null,
       timeoutSeconds: options.timeoutSeconds ?? null,
       commandLine,
       errorCode,
@@ -473,7 +501,7 @@ export async function main(argv, deps = {}) {
   await writeFinalMarkdown(
     paths.finalPath,
     buildFinalMarkdown({
-      runtime: options.runtime,
+      runtime: execution.runtime,
       state,
       commandLine,
       stdoutText: result.stdoutText,
@@ -488,7 +516,7 @@ export async function main(argv, deps = {}) {
   if (result.cancelled) {
     await writeCancellationAck(paths.cancelAckPath, {
       jobId,
-      runtime: options.runtime,
+      runtime: execution.runtime,
       state,
       cancelPath: cancelFile,
       requestedAt: result.cancelRequestedAt,
@@ -500,13 +528,16 @@ export async function main(argv, deps = {}) {
 
   await writeStatus(paths.statusPath, {
     jobId,
-    runtime: options.runtime,
+    runtime: execution.runtime,
     state,
     startedAt,
     finishedAt,
     exitCode: result.code,
     signal: result.signal,
-    cwd: options.cwd,
+    inputMode: execution.inputMode,
+    intent: execution.intent,
+    targetPath: execution.targetPath,
+    cwd: execution.cwd,
     taskFile: options.taskFile,
     requestFile: options.requestFile ?? null,
     outDir: options.outDir,
@@ -515,7 +546,8 @@ export async function main(argv, deps = {}) {
     finalPath: paths.finalPath,
     cancelPath: cancelFile,
     cancelAckPath: paths.cancelAckPath,
-    model: options.model ?? null,
+    model: execution.model ?? null,
+    requestedModel: execution.requestedModel ?? null,
     timeoutSeconds: options.timeoutSeconds ?? null,
     commandLine,
     errorCode,

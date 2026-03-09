@@ -12,9 +12,11 @@
 
 ## Next likely steps
 
-- make `goose` the default harness for host inspection tasks
-- add recipe/system-prompt conventions for `goose` host jobs
-- support feeding gathered host context into `ollama` for local summarization
+- add multi-stage orchestration inside `local-subagent`, such as Goose
+  inspection followed by local-model summarization when useful
+- extend the intent surface beyond `desktop_listing`, `inspect_path`, and
+  `repo_summary`
+- add a small stable API version marker to the request/result contract
 - add artifact attachment conventions
 - add richer cancel semantics beyond marker files
 - add log streaming or polling helpers

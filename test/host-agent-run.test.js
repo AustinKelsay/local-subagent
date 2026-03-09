@@ -233,6 +233,45 @@ test("host-agent-run supports goose runtime", async () => {
   assert.match(stdout, /system=You are a host-side Goose agent running for OpenClaw\./);
 });
 
+test("host-agent-run resolves desktop_listing intent to goose orchestration", async () => {
+  const job = await makeJob();
+  const requestFile = path.join(job.outDir, "request.json");
+
+  await writeFile(
+    requestFile,
+    `${JSON.stringify(
+      {
+        jobId: "job-from-intent",
+        intent: "desktop_listing",
+        cwd: job.cwd,
+        targetPath: job.cwd,
+        outDir: job.outDir,
+        preferredModel: "qwen3.5:9b",
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const result = await main(["--request-file", requestFile], {
+    env: buildRuntimeEnv("goose"),
+  });
+
+  assert.equal(result.state, "completed");
+  const status = JSON.parse(await readFile(path.join(job.outDir, "status.json"), "utf8"));
+  const stdout = await readFile(path.join(job.outDir, "stdout.log"), "utf8");
+
+  assert.equal(status.runtime, "goose");
+  assert.equal(status.inputMode, "intent");
+  assert.equal(status.intent, "desktop_listing");
+  assert.equal(status.targetPath, job.cwd);
+  assert.equal(status.requestedModel, "qwen3.5:9b");
+  assert.equal(status.model, null);
+  assert.match(stdout, /List the top-level entries only\./);
+  assert.match(stdout, /Inspect the real host directory at/);
+});
+
 test("host-agent-run passes goose recipe and tuning options", async () => {
   const job = await makeJob();
 

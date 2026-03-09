@@ -11,10 +11,11 @@ to a job directory.
 
 ```bash
 host-agent-run \
-  --runtime <runtime> \
+  (--runtime <runtime> | --intent <intent>) \
   --cwd <absolute-path> \
-  --task-file <absolute-path> \
   --out-dir <absolute-path> \
+  [--task-file <absolute-path>] \
+  [--target-path <absolute-path>] \
   [--model <name>] \
   [--timeout-seconds <n>] \
   [--job-id <id>] \
@@ -30,21 +31,24 @@ host-agent-run --request-file <absolute-path>
 ## Input requirements
 
 - `--cwd` must be an absolute readable path
-- `--task-file` must be an absolute readable file
+- `--task-file`, when provided, must be an absolute readable file
 - `--out-dir` must be an absolute path
-- `--task-file` must not be empty
+- `--task-file` must not be empty when provided
 - `--timeout-seconds`, when provided, must be a positive integer
-- runtime must be explicitly supported by the wrapper
+- runtime or intent must be explicitly supported by the wrapper
 - `--request-file`, when used, must be an absolute path to a JSON object
 
 Request file fields:
 
 - `jobId`
 - `runtime`
+- `intent`
 - `cwd`
+- `targetPath`
 - `taskFile`
 - `outDir`
 - `model`
+- `preferredModel`
 - `timeoutSeconds`
 
 CLI flags win over request-file values when both are provided.
@@ -64,6 +68,14 @@ Runtime notes:
   prompt, and a recipe
 - the bundled Goose recipe lives at
   `recipes/goose-host-inspector.yaml`
+
+## Current intent support
+
+- `desktop_listing`
+- `inspect_path`
+- `repo_summary`
+
+Intent mode is the preferred generic API boundary for OpenClaw.
 
 ## Output files
 
@@ -91,6 +103,9 @@ Example:
 {
   "jobId": "job-123",
   "runtime": "opencode",
+  "inputMode": "runtime",
+  "intent": null,
+  "targetPath": null,
   "state": "completed",
   "startedAt": "2026-03-08T18:00:00.000Z",
   "finishedAt": "2026-03-08T18:01:12.000Z",
@@ -105,6 +120,7 @@ Example:
   "cancelPath": "/Users/example/.openclaw/host-jobs/job-123/cancel-request.json",
   "cancelAckPath": "/Users/example/.openclaw/host-jobs/job-123/cancelled.json",
   "model": "claude-opus-4-6",
+  "requestedModel": "claude-opus-4-6",
   "timeoutSeconds": 300,
   "commandLine": "/Users/example/.openclaw-node/bin/host-agent-run --runtime opencode ...",
   "errorCode": null,

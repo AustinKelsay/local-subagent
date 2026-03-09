@@ -15,6 +15,8 @@ This note captures the current OpenClaw-side integration state for
   `skills/host-subagent/scripts/run-host-job.mjs`
 - that launcher now uses `openclaw --profile host-subagent nodes invoke
   --command system.run ...` with a canonical Mac `cwd`
+- the preferred request boundary is now a high-level intent request sent to
+  `local-subagent`, not a runtime-specific request assembled inside OpenClaw
 
 The in-chat model can still fall back to the older generic host-exec path if it
 does not choose the launcher. That routing gap is currently the main OpenClaw
@@ -88,6 +90,20 @@ Transport and runtime capability are separate concerns.
   collected host context
 - a request such as "tell me what is in Desktop" should not rely on bare
   `ollama run ...` alone to inspect the filesystem truthfully
+
+## Boundary direction
+
+The intended split is now:
+
+- OpenClaw side:
+  - detect local-host intent
+  - submit `intent + cwd + optional model hint`
+  - read normalized artifacts back
+- local-subagent side:
+  - choose the real runtime
+  - choose Goose recipe/system prompt/tooling
+  - execute on the host
+  - report normalized status and output
 
 ## Operational caveats
 

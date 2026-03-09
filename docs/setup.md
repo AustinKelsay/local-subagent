@@ -135,6 +135,12 @@ Then inspect:
 - `ollama`
 - `goose`
 
+Preferred caller shape:
+
+- use an intent request when the caller should stay generic
+- use a runtime request only when the caller intentionally wants to control the
+  local runtime directly
+
 Notes:
 
 - `ollama` requires a model, either via `--model` or `HOST_AGENT_OLLAMA_MODEL`
