@@ -16,6 +16,8 @@ generic remote shell.
 
 - use `goose` or `opencode` when the host job needs real tools or filesystem
   inspection
+- `goose` now defaults to a bundled host-inspector recipe plus the builtin
+  `developer` tools in headless mode
 - use `ollama` when you already have the relevant host context and want a local
   model to summarize or transform it
 - do not assume plain `ollama run ...` can truthfully inspect the host machine

@@ -1,5 +1,99 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineRuntimeAdapter } from "./types.js";
 import { buildHostPrompt, parsePrefixArgs } from "./shared.js";
+
+const bundledRecipePath = fileURLToPath(new URL("../../recipes/goose-host-inspector.yaml", import.meta.url));
+
+function parseOptionalPositiveInt(rawValue, envName) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return null;
+  }
+
+  const numeric = Number.parseInt(String(rawValue), 10);
+  if (!Number.isFinite(numeric) || numeric < 1) {
+    throw new Error(`${envName} must be a positive integer`);
+  }
+
+  return numeric;
+}
+
+function parseGooseBuiltins(rawValue) {
+  if (rawValue === undefined) {
+    return ["developer"];
+  }
+
+  if (!rawValue || !rawValue.trim()) {
+    return [];
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch (error) {
+    throw new Error(
+      `HOST_AGENT_GOOSE_BUILTINS must be valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string" || !entry.trim())) {
+    throw new Error("HOST_AGENT_GOOSE_BUILTINS must be a JSON array of non-empty strings");
+  }
+
+  return parsed.map((entry) => entry.trim());
+}
+
+function parseGooseRecipeParams(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return [];
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch (error) {
+    throw new Error(
+      `HOST_AGENT_GOOSE_RECIPE_PARAMS must be valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (Array.isArray(parsed)) {
+    if (parsed.some((entry) => typeof entry !== "string" || !entry.includes("="))) {
+      throw new Error("HOST_AGENT_GOOSE_RECIPE_PARAMS array entries must be strings in KEY=VALUE form");
+    }
+    return parsed;
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("HOST_AGENT_GOOSE_RECIPE_PARAMS must be a JSON object or array");
+  }
+
+  return Object.entries(parsed).map(([key, value]) => `${key}=${String(value)}`);
+}
+
+function buildGooseSystemPrompt(context) {
+  return [
+    "You are a host-side Goose agent running for OpenClaw.",
+    `Use the real host working directory: ${context.cwd}`,
+    `Use the artifact directory for durable outputs: ${context.outDir}`,
+    "Prefer direct tool use over speculation.",
+    "If the task requires filesystem facts, inspect them directly with the available developer tools.",
+    "If you cannot verify something from the host, say so plainly.",
+    "Return the final user-facing answer in plain text.",
+  ].join("\n");
+}
+
+function resolveGooseRecipe(rawValue) {
+  const trimmed = rawValue?.trim();
+  if (trimmed) {
+    if (trimmed === "off" || trimmed === "none") {
+      return null;
+    }
+    return trimmed;
+  }
+
+  return existsSync(bundledRecipePath) ? bundledRecipePath : null;
+}
 
 export const gooseRuntime = defineRuntimeAdapter({
   id: "goose",
@@ -8,6 +102,15 @@ export const gooseRuntime = defineRuntimeAdapter({
     const command = context.env.HOST_AGENT_GOOSE_BIN || "goose";
     const args = [...prefixArgs, "run", "--text", buildHostPrompt(context), "--quiet", "--no-session"];
     const provider = context.env.HOST_AGENT_GOOSE_PROVIDER;
+    const builtins = parseGooseBuiltins(context.env.HOST_AGENT_GOOSE_BUILTINS);
+    const recipe = resolveGooseRecipe(context.env.HOST_AGENT_GOOSE_RECIPE);
+    const recipeParams = parseGooseRecipeParams(context.env.HOST_AGENT_GOOSE_RECIPE_PARAMS);
+    const systemPrompt = context.env.HOST_AGENT_GOOSE_SYSTEM_PROMPT?.trim() || buildGooseSystemPrompt(context);
+    const maxTurns = parseOptionalPositiveInt(context.env.HOST_AGENT_GOOSE_MAX_TURNS, "HOST_AGENT_GOOSE_MAX_TURNS");
+    const maxToolRepetitions = parseOptionalPositiveInt(
+      context.env.HOST_AGENT_GOOSE_MAX_TOOL_REPETITIONS,
+      "HOST_AGENT_GOOSE_MAX_TOOL_REPETITIONS",
+    );
 
     if (provider) {
       args.push("--provider", provider);
@@ -15,6 +118,30 @@ export const gooseRuntime = defineRuntimeAdapter({
 
     if (context.model) {
       args.push("--model", context.model);
+    }
+
+    if (systemPrompt) {
+      args.push("--system", systemPrompt);
+    }
+
+    if (recipe) {
+      args.push("--recipe", recipe);
+    }
+
+    for (const param of recipeParams) {
+      args.push("--params", param);
+    }
+
+    if (builtins.length > 0) {
+      args.push("--with-builtin", builtins.join(","));
+    }
+
+    if (maxTurns) {
+      args.push("--max-turns", String(maxTurns));
+    }
+
+    if (maxToolRepetitions) {
+      args.push("--max-tool-repetitions", String(maxToolRepetitions));
     }
 
     return { command, args };

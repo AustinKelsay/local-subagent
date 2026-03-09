@@ -228,6 +228,46 @@ test("host-agent-run supports goose runtime", async () => {
   assert.match(stdout, /fake-goose ok/);
   assert.match(stdout, /provider=openai/);
   assert.match(stdout, /model=gpt-4.1/);
+  assert.match(stdout, /recipe=.*goose-host-inspector\.yaml/);
+  assert.match(stdout, /builtins=developer/);
+  assert.match(stdout, /system=You are a host-side Goose agent running for OpenClaw\./);
+});
+
+test("host-agent-run passes goose recipe and tuning options", async () => {
+  const job = await makeJob();
+
+  const result = await main(
+    [
+      "--runtime",
+      "goose",
+      "--cwd",
+      job.cwd,
+      "--task-file",
+      job.taskFile,
+      "--out-dir",
+      job.outDir,
+    ],
+    {
+      env: buildRuntimeEnv("goose", {
+        HOST_AGENT_GOOSE_RECIPE: "/tmp/goose-host-inspector.yaml",
+        HOST_AGENT_GOOSE_RECIPE_PARAMS: JSON.stringify({
+          target_dir: job.cwd,
+          artifact_dir: job.outDir,
+        }),
+        HOST_AGENT_GOOSE_BUILTINS: JSON.stringify(["developer", "memory"]),
+        HOST_AGENT_GOOSE_MAX_TURNS: "12",
+        HOST_AGENT_GOOSE_MAX_TOOL_REPETITIONS: "3",
+      }),
+    },
+  );
+
+  assert.equal(result.state, "completed");
+  const stdout = await readFile(path.join(job.outDir, "stdout.log"), "utf8");
+  assert.match(stdout, /recipe=\/tmp\/goose-host-inspector\.yaml/);
+  assert.match(stdout, /params=target_dir=.*artifact_dir=.*/);
+  assert.match(stdout, /builtins=developer,memory/);
+  assert.match(stdout, /maxTurns=12/);
+  assert.match(stdout, /maxToolRepetitions=3/);
 });
 
 test("host-agent-run marks timed out jobs", async () => {

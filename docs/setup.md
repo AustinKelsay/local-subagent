@@ -138,6 +138,9 @@ Then inspect:
 Notes:
 
 - `ollama` requires a model, either via `--model` or `HOST_AGENT_OLLAMA_MODEL`
+- `goose` now defaults to the bundled recipe in
+  `recipes/goose-host-inspector.yaml`
+- `goose` also defaults to the builtin `developer` extension in headless mode
 - `goose` can also use `HOST_AGENT_GOOSE_PROVIDER`
 
 ## 9. Cancellation markers
@@ -179,7 +182,21 @@ Adapter environment overrides:
 - `HOST_AGENT_GOOSE_BIN`
 - `HOST_AGENT_GOOSE_PREFIX_ARGS`
 - `HOST_AGENT_GOOSE_PROVIDER`
+- `HOST_AGENT_GOOSE_BUILTINS`
+- `HOST_AGENT_GOOSE_SYSTEM_PROMPT`
+- `HOST_AGENT_GOOSE_RECIPE`
+- `HOST_AGENT_GOOSE_RECIPE_PARAMS`
+- `HOST_AGENT_GOOSE_MAX_TURNS`
+- `HOST_AGENT_GOOSE_MAX_TOOL_REPETITIONS`
 
 Any `*_PREFIX_ARGS` value must be a JSON array of strings.
+
+Additional Goose notes:
+
+- `HOST_AGENT_GOOSE_BUILTINS` must be a JSON array of builtin names. Default:
+  `["developer"]`
+- `HOST_AGENT_GOOSE_RECIPE_PARAMS` may be a JSON object or a JSON array of
+  `KEY=VALUE` strings
+- set `HOST_AGENT_GOOSE_RECIPE=off` to disable the bundled recipe
 
 This is mainly useful for testing and controlled wrapper setups.

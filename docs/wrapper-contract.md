@@ -57,6 +57,14 @@ CLI flags win over request-file values when both are provided.
 
 Unknown runtimes are rejected.
 
+Runtime notes:
+
+- `ollama` is a prompt runner and should not be assumed to have host tools
+- `goose` runs headless and can be configured with builtin tools, a system
+  prompt, and a recipe
+- the bundled Goose recipe lives at
+  `recipes/goose-host-inspector.yaml`
+
 ## Output files
 
 The wrapper writes:
