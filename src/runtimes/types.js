@@ -3,6 +3,7 @@
  * @property {string} command
  * @property {string[]} args
  * @property {Record<string, string | undefined>=} env
+ * @property {string=} stdinText
  *
  * @typedef {object} RuntimeBuildContext
  * @property {string} cwd

@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 
 const supportedIntentIds = new Set(["desktop_listing", "inspect_path", "repo_summary"]);
@@ -21,6 +22,7 @@ function ensureIntent(intent) {
 function buildDesktopListingTask({ targetPath, operatorNotes }) {
   return joinSections([
     [
+      "Resolve the real Desktop directory for the current host user from the host environment.",
       `Inspect the real host directory at ${targetPath}.`,
       "List the top-level entries only.",
       "Then provide a concise summary of what is on the Desktop.",
@@ -72,7 +74,10 @@ export function resolveExecutionRequest({ runtime, intent, cwd, targetPath, task
 
   ensureIntent(intent);
 
-  const resolvedTargetPath = path.resolve(targetPath || cwd);
+  const resolvedTargetPath =
+    intent === "desktop_listing"
+      ? path.resolve(targetPath || path.join(os.homedir(), "Desktop"))
+      : path.resolve(targetPath || cwd);
   const operatorNotes = taskText?.trim() ? compactBlock(taskText) : null;
 
   if (intent === "desktop_listing") {
@@ -81,7 +86,7 @@ export function resolveExecutionRequest({ runtime, intent, cwd, targetPath, task
       runtime: "goose",
       cwd,
       taskText: buildDesktopListingTask({ targetPath: resolvedTargetPath, operatorNotes }),
-      model: null,
+      model: requestedModel ?? null,
       intent,
       targetPath: resolvedTargetPath,
       requestedModel: requestedModel ?? null,
@@ -94,7 +99,7 @@ export function resolveExecutionRequest({ runtime, intent, cwd, targetPath, task
       runtime: "goose",
       cwd,
       taskText: buildInspectPathTask({ targetPath: resolvedTargetPath, operatorNotes }),
-      model: null,
+      model: requestedModel ?? null,
       intent,
       targetPath: resolvedTargetPath,
       requestedModel: requestedModel ?? null,
@@ -106,7 +111,7 @@ export function resolveExecutionRequest({ runtime, intent, cwd, targetPath, task
     runtime: "goose",
     cwd,
     taskText: buildRepoSummaryTask({ targetPath: resolvedTargetPath, operatorNotes }),
-    model: null,
+    model: requestedModel ?? null,
     intent,
     targetPath: resolvedTargetPath,
     requestedModel: requestedModel ?? null,

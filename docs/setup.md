@@ -39,6 +39,12 @@ The install script also creates:
 ~/.openclaw/host-jobs/
 ```
 
+And writes shared host metadata for the OpenClaw overlay:
+
+```text
+~/.openclaw/host-subagent.json
+```
+
 ## 4. Pair the node host to OpenClaw
 
 On the Mac host:
@@ -140,6 +146,8 @@ Preferred caller shape:
 - use an intent request when the caller should stay generic
 - use a runtime request only when the caller intentionally wants to control the
   local runtime directly
+- for intent requests, let OpenClaw launch from a stable approved host
+  directory and let `local-subagent` resolve locations like Desktop on the host
 
 Notes:
 

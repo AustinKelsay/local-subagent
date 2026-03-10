@@ -228,7 +228,7 @@ test("host-agent-run supports goose runtime", async () => {
   assert.match(stdout, /fake-goose ok/);
   assert.match(stdout, /provider=openai/);
   assert.match(stdout, /model=gpt-4.1/);
-  assert.match(stdout, /recipe=.*goose-host-inspector\.yaml/);
+  assert.match(stdout, /recipe=none/);
   assert.match(stdout, /builtins=developer/);
   assert.match(stdout, /system=You are a host-side Goose agent running for OpenClaw\./);
 });
@@ -236,6 +236,7 @@ test("host-agent-run supports goose runtime", async () => {
 test("host-agent-run resolves desktop_listing intent to goose orchestration", async () => {
   const job = await makeJob();
   const requestFile = path.join(job.outDir, "request.json");
+  const expectedDesktopPath = path.join(os.homedir(), "Desktop");
 
   await writeFile(
     requestFile,
@@ -244,7 +245,6 @@ test("host-agent-run resolves desktop_listing intent to goose orchestration", as
         jobId: "job-from-intent",
         intent: "desktop_listing",
         cwd: job.cwd,
-        targetPath: job.cwd,
         outDir: job.outDir,
         preferredModel: "qwen3.5:9b",
       },
@@ -265,11 +265,15 @@ test("host-agent-run resolves desktop_listing intent to goose orchestration", as
   assert.equal(status.runtime, "goose");
   assert.equal(status.inputMode, "intent");
   assert.equal(status.intent, "desktop_listing");
-  assert.equal(status.targetPath, job.cwd);
+  assert.equal(status.targetPath, expectedDesktopPath);
   assert.equal(status.requestedModel, "qwen3.5:9b");
-  assert.equal(status.model, null);
+  assert.equal(status.model, "qwen3.5:9b");
+  assert.match(stdout, /provider=ollama/);
+  assert.match(stdout, /model=qwen3.5:9b/);
   assert.match(stdout, /List the top-level entries only\./);
+  assert.match(stdout, /Resolve the real Desktop directory for the current host user/);
   assert.match(stdout, /Inspect the real host directory at/);
+  assert.match(stdout, new RegExp(expectedDesktopPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("host-agent-run passes goose recipe and tuning options", async () => {
@@ -302,8 +306,10 @@ test("host-agent-run passes goose recipe and tuning options", async () => {
 
   assert.equal(result.state, "completed");
   const stdout = await readFile(path.join(job.outDir, "stdout.log"), "utf8");
-  assert.match(stdout, /recipe=\/tmp\/goose-host-inspector\.yaml/);
-  assert.match(stdout, /params=target_dir=.*artifact_dir=.*/);
+  assert.match(stdout, /recipe=none/);
+  assert.match(stdout, /system=You are a host-side Goose agent running for OpenClaw\./);
+  assert.match(stdout, /Recipe template: \/tmp\/goose-host-inspector\.yaml/);
+  assert.match(stdout, /Recipe parameters: target_dir=.*artifact_dir=.*/);
   assert.match(stdout, /builtins=developer,memory/);
   assert.match(stdout, /maxTurns=12/);
   assert.match(stdout, /maxToolRepetitions=3/);

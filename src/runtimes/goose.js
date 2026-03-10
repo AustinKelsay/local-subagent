@@ -74,13 +74,30 @@ function parseGooseRecipeParams(rawValue) {
 function buildGooseSystemPrompt(context) {
   return [
     "You are a host-side Goose agent running for OpenClaw.",
-    `Use the real host working directory: ${context.cwd}`,
-    `Use the artifact directory for durable outputs: ${context.outDir}`,
+    "Your role is to inspect the real host machine, gather facts, and return a truthful answer.",
+    "You have permission to spend time investigating with the available developer tools before you answer.",
+    `Use the real host working directory as your stable launch point: ${context.cwd}`,
+    `Use the artifact directory for durable outputs when needed: ${context.outDir}`,
     "Prefer direct tool use over speculation.",
     "If the task requires filesystem facts, inspect them directly with the available developer tools.",
+    "Resolve user-facing locations like Desktop from the host environment instead of trusting guessed usernames.",
     "If you cannot verify something from the host, say so plainly.",
     "Return the final user-facing answer in plain text.",
   ].join("\n");
+}
+
+function buildRecipeContext(recipe, recipeParams) {
+  const sections = [];
+
+  if (recipe) {
+    sections.push(`Recipe template: ${recipe}`);
+  }
+
+  if (recipeParams.length > 0) {
+    sections.push(`Recipe parameters: ${recipeParams.join(", ")}`);
+  }
+
+  return sections.join("\n");
 }
 
 function resolveGooseRecipe(rawValue) {
@@ -100,12 +117,16 @@ export const gooseRuntime = defineRuntimeAdapter({
   buildLaunchSpec(context) {
     const prefixArgs = parsePrefixArgs(context.env.HOST_AGENT_GOOSE_PREFIX_ARGS, "HOST_AGENT_GOOSE_PREFIX_ARGS");
     const command = context.env.HOST_AGENT_GOOSE_BIN || "goose";
-    const args = [...prefixArgs, "run", "--text", buildHostPrompt(context), "--quiet", "--no-session"];
-    const provider = context.env.HOST_AGENT_GOOSE_PROVIDER;
+    const prompt = buildHostPrompt(context);
+    const args = [...prefixArgs, "run", "--quiet", "--no-session"];
+    const provider = context.env.HOST_AGENT_GOOSE_PROVIDER || (context.model ? "ollama" : undefined);
     const builtins = parseGooseBuiltins(context.env.HOST_AGENT_GOOSE_BUILTINS);
     const recipe = resolveGooseRecipe(context.env.HOST_AGENT_GOOSE_RECIPE);
     const recipeParams = parseGooseRecipeParams(context.env.HOST_AGENT_GOOSE_RECIPE_PARAMS);
-    const systemPrompt = context.env.HOST_AGENT_GOOSE_SYSTEM_PROMPT?.trim() || buildGooseSystemPrompt(context);
+    const recipeContext = buildRecipeContext(recipe, recipeParams);
+    const systemPrompt =
+      context.env.HOST_AGENT_GOOSE_SYSTEM_PROMPT?.trim() ||
+      [buildGooseSystemPrompt(context), recipeContext].filter(Boolean).join("\n");
     const maxTurns = parseOptionalPositiveInt(context.env.HOST_AGENT_GOOSE_MAX_TURNS, "HOST_AGENT_GOOSE_MAX_TURNS");
     const maxToolRepetitions = parseOptionalPositiveInt(
       context.env.HOST_AGENT_GOOSE_MAX_TOOL_REPETITIONS,
@@ -123,14 +144,7 @@ export const gooseRuntime = defineRuntimeAdapter({
     if (systemPrompt) {
       args.push("--system", systemPrompt);
     }
-
-    if (recipe) {
-      args.push("--recipe", recipe);
-    }
-
-    for (const param of recipeParams) {
-      args.push("--params", param);
-    }
+    args.push("--text", prompt);
 
     if (builtins.length > 0) {
       args.push("--with-builtin", builtins.join(","));
@@ -144,6 +158,9 @@ export const gooseRuntime = defineRuntimeAdapter({
       args.push("--max-tool-repetitions", String(maxToolRepetitions));
     }
 
-    return { command, args };
+    return {
+      command,
+      args,
+    };
   },
 });

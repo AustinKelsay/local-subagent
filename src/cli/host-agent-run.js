@@ -213,7 +213,7 @@ async function runChildProcess(launchSpec, options, deps) {
   const child = deps.spawnFn(launchSpec.command, launchSpec.args, {
     cwd: options.cwd,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
 
   return await new Promise((resolve, reject) => {
@@ -259,6 +259,13 @@ async function runChildProcess(launchSpec, options, deps) {
         stderrChunks.push(Buffer.from(chunk));
         stderrStream.write(chunk);
       });
+    }
+
+    if (child.stdin) {
+      if (typeof launchSpec.stdinText === "string") {
+        child.stdin.write(launchSpec.stdinText);
+      }
+      child.stdin.end();
     }
 
     if (options.timeoutSeconds) {
@@ -365,7 +372,7 @@ export async function main(argv, deps = {}) {
   const jobId = options.jobId || path.basename(options.outDir);
   const cancelFile = options.cancelFile ?? paths.cancelPath;
   const taskText = options.taskFile ? await readFile(options.taskFile, "utf8") : "";
-  if (options.taskFile && !taskText.trim()) {
+  if (options.taskFile && options.runtime && !taskText.trim()) {
     throw createUsageError("--task-file must not be empty");
   }
 

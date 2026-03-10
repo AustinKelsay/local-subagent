@@ -33,7 +33,9 @@ host-agent-run --request-file <absolute-path>
 - `--cwd` must be an absolute readable path
 - `--task-file`, when provided, must be an absolute readable file
 - `--out-dir` must be an absolute path
-- `--task-file` must not be empty when provided
+- `--task-file` must not be empty for low-level runtime requests
+- intent requests may omit `taskFile` entirely when the intent already carries
+  enough meaning
 - `--timeout-seconds`, when provided, must be a positive integer
 - runtime or intent must be explicitly supported by the wrapper
 - `--request-file`, when used, must be an absolute path to a JSON object

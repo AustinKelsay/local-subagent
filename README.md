@@ -19,6 +19,8 @@ generic remote shell.
   inspection
 - `goose` now defaults to a bundled host-inspector recipe plus the builtin
   `developer` tools in headless mode
+- for intent-based host inspection, a local model hint like `qwen3.5:9b` is
+  passed through to Goose as the effective host model via Ollama
 - use `ollama` when you already have the relevant host context and want a local
   model to summarize or transform it
 - do not assume plain `ollama run ...` can truthfully inspect the host machine
@@ -40,6 +42,9 @@ Preferred boundary:
 
 - OpenClaw sends a generic request like `intent=desktop_listing`
 - `local-subagent` decides which runtime to use and how to run it
+- OpenClaw launches from a stable approved host directory, not from guessed
+  target paths like `~/Desktop`
+- `local-subagent` resolves user-facing locations like Desktop on the host
 - OpenClaw reads the normalized result back
 
 Typical job path:
@@ -52,6 +57,12 @@ Stable wrapper path:
 
 ```text
 ~/.openclaw-node/bin/host-agent-run
+```
+
+Shared host metadata:
+
+```text
+~/.openclaw/host-subagent.json
 ```
 
 ## Quick start
